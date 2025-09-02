@@ -21,6 +21,234 @@ body {
   color: white;
   padding: 40px 30px;
   text-align: center;
+  position: relative;
+}
+
+.options-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 28px;
+  font-weight: 300;
+}
+
+.options-header p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 16px;
+}
+
+.auth-status {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+}
+
+.auth-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.options-content {
+  padding: 30px;
+}
+
+/* Welcome Section */
+.welcome-section {
+  margin-bottom: 40px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #f1f8e9 100%);
+  border-radius: 12px;
+  padding: 30px;
+  border: 2px solid #e0e0e0;
+}
+
+.welcome-section h2 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  color: #2c3e50;
+  text-align: center;
+}
+
+.welcome-content {
+  text-align: center;
+}
+
+.welcome-content > p {
+  font-size: 16px;
+  color: #555;
+  margin-bottom: 30px;
+}
+
+.feature-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.feature-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.feature-item strong {
+  display: block;
+  color: #2c3e50;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.feature-item p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.welcome-actions {
+  margin-top: 20px;
+}
+
+.primary-btn {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.primary-btn:hover {
+  background: #5a67d8;
+  transform: translateY(-1px);
+}
+
+.welcome-note {
+  margin: 15px 0 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.settings-section {
+  margin-bottom: 40px;
+  background: white;
+  border-radius: 8px;
+  padding: 25px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.settings-section h2 {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  font-weight: 500;
+  color: #2c3e50;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 10px;
+}
+
+/* Authentication Section */
+.auth-section {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.auth-success {
+  text-align: center;
+}
+
+.auth-required {
+  text-align: center;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 15px;
+}
+
+.status-item strong {
+  font-size: 16px;
+  margin-left: 8px;
+}
+
+.user-details {
+  background: white;
+  border-radius: 6px;
+  padding: 15px;
+  margin: 15px 0;
+  text-align: left;
+}
+
+.user-details p {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.auth-message {
+  color: #666;
+  margin: 10px 0 20px 0;
+  font-size: 14px;
+}
+
+.login-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.login-btn:hover {
+  background: #218838;
+}
+
+.logout-btn {
+  background: #dc3545;
+  /* src/options/options.css */
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  background: #f5f5f5;
+  margin: 0;
+  padding: 0;
+}
+
+.options-container {
+  max-width: 800px;
+  margin: 0 auto;
+  background: white;
+  min-height: 100vh;
+}
+
+.options-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 40px 30px;
+  text-align: center;
 }
 
 .options-header h1 {

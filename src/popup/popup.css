@@ -48,6 +48,197 @@
   text-overflow: ellipsis;
 }
 
+.auth-indicator {
+  margin-left: 12px;
+}
+
+.auth-badge {
+  background: #28a745;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.popup-content {
+  padding: 16px;
+}
+
+/* Authentication Required Styles */
+.auth-required {
+  padding: 20px;
+  text-align: center;
+}
+
+.auth-header h1 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #2c3e50;
+}
+
+.auth-header p {
+  margin: 0 0 20px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.policy-detected {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.detection-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.detection-notice .icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.detection-notice strong {
+  color: #856404;
+  font-size: 14px;
+}
+
+.detection-notice p {
+  margin: 4px 0 0 0;
+  color: #6c5700;
+  font-size: 12px;
+}
+
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.login-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.login-btn:hover {
+  background: #0056b3;
+}
+
+.welcome-btn {
+  background: transparent;
+  color: #666;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.welcome-btn:hover {
+  background: #f8f9fa;
+  border-color: #007bff;
+}
+
+.auth-info {
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.auth-info small {
+  color: #999;
+  font-size: 11px;
+}
+
+/* Policy Section */
+.policy-section {
+  margin-bottom: 20px;
+}
+
+.policy-section h2 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.policy-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 8px 0;
+}
+
+.policy-label {
+  font-size: 13px;
+  color: #555/* src/popup/popup.css */
+}
+
+.popup-container {
+  width: 320px;
+  min-height: 400px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  background: #fff;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f8f9fa;
+}
+
+.site-favicon {
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
+  border-radius: 4px;
+}
+
+.site-info {
+  flex: 1;
+}
+
+.site-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.site-domain {
+  margin: 2px 0 0 0;
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .popup-content {
   padding: 16px;
 }
@@ -97,6 +288,21 @@
   font-style: italic;
 }
 
+.tracking-status {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #d4edda;
+  border-radius: 4px;
+}
+
+.tracking-status small {
+  color: #155724;
+  font-size: 11px;
+  margin-left: 6px;
+}
+
 .actions-section {
   display: flex;
   gap: 8px;
@@ -122,15 +328,46 @@
   border-color: #007bff;
 }
 
+.retry-btn {
+  width: 100%;
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover {
+  background: #f8f9fa;
+  border-color: #007bff;
+}
+
 .metadata {
   padding-top: 12px;
   border-top: 1px solid #e0e0e0;
   text-align: center;
+  margin-bottom: 12px;
 }
 
 .metadata small {
   color: #666;
   font-size: 11px;
+}
+
+.user-info {
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.user-info small {
+  color: #666;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .loading,
@@ -141,6 +378,9 @@
   height: 200px;
   font-size: 14px;
   color: #666;
+  flex-direction: column;
+  text-align: center;
+  padding: 20px;
 }
 
 .error {
