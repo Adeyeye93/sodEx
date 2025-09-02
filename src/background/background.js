@@ -86,7 +86,7 @@ class APIService {
   }
 
   async redirectToLogin() {
-    chrome.tabs.create({ url: `${this.authURL}/login_user` });
+    chrome.tabs.create({ url: `${this.authURL}/users/log_in` });
   }
 
   // Generate browser fingerprint
