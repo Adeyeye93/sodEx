@@ -9,6 +9,13 @@ const Popup = () => {
   const [error, setError] = useState(null);
   const [authStatus, setAuthStatus] = useState(null);
   const [isFirstTime, setIsFirstTime] = useState(false);
+  
+  // Session management state
+  const [sessionInfo, setSessionInfo] = useState(null);
+  const [allSessions, setAllSessions] = useState([]);
+  const [showSessions, setShowSessions] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('site'); // 'site' or 'sessions'
 
   useEffect(() => {
     checkAuthAndLoadData();
@@ -28,8 +35,11 @@ const Popup = () => {
           return;
         }
 
-        // User is authenticated, load site data
-        await loadCurrentSiteData();
+        // User is authenticated, load both site data and session info
+        await Promise.all([
+          loadCurrentSiteData(),
+          loadSessionInfo()
+        ]);
       });
     } catch (err) {
       setError('Failed to check authentication');
@@ -52,7 +62,6 @@ const Popup = () => {
       
       if (!tab.url || tab.url.startsWith('chrome://')) {
         setError('Cannot access this page');
-        setLoading(false);
         return;
       }
 
@@ -77,22 +86,91 @@ const Popup = () => {
               last_crawled_at: null
             });
           }
-          setLoading(false);
         }
       );
     } catch (err) {
       setError('Failed to load site data');
+    }
+  };
+
+  const loadSessionInfo = async () => {
+    try {
+      // Get current session info
+      const sessionResponse = await sendMessage({ action: 'getBrowserSessionInfo' });
+      if (sessionResponse.success) {
+        setSessionInfo(sessionResponse.data);
+      }
+    } catch (err) {
+      console.error('Failed to load session info:', err);
+    } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAllSessions = async () => {
+    setSessionLoading(true);
+    try {
+      const response = await sendMessage({ action: 'getUserSessions' });
+      if (response.success) {
+        setAllSessions(response.data.data || []);
+      } else {
+        setError('Failed to load sessions');
+      }
+    } catch (err) {
+      setError('Failed to load sessions');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const refreshSession = async () => {
+    setSessionLoading(true);
+    try {
+      await sendMessage({ action: 'validateBrowserSession' });
+      await loadSessionInfo();
+      setError(null);
+      showSuccess('Session refreshed successfully');
+    } catch (err) {
+      setError('Failed to refresh session');
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const deactivateOtherSessions = async () => {
+    setSessionLoading(true);
+    try {
+      const response = await sendMessage({ action: 'deactivateOtherSessions' });
+      if (response.success) {
+        await loadAllSessions();
+        showSuccess('Other sessions deactivated');
+      } else {
+        setError('Failed to deactivate other sessions');
+      }
+    } catch (err) {
+      setError('Failed to deactivate other sessions');
+    } finally {
+      setSessionLoading(false);
     }
   };
 
   const handleLogin = () => {
     chrome.runtime.sendMessage({ action: 'redirectToLogin' });
-    window.close(); // Close popup after redirecting
+    window.close();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await sendMessage({ action: 'clearAuth' });
+      setAuthStatus({ authenticated: false });
+      setSessionInfo(null);
+      setAllSessions([]);
+    } catch (err) {
+      setError('Failed to logout');
+    }
   };
 
   const handleGetStarted = () => {
-    // Open options page for welcome/onboarding
     chrome.runtime.openOptionsPage();
     window.close();
   };
@@ -107,6 +185,51 @@ const Popup = () => {
     setLoading(true);
     setError(null);
     checkAuthAndLoadData();
+  };
+
+  const sendMessage = (message) => {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(response || {});
+        }
+      });
+    });
+  };
+
+  const showSuccess = (message) => {
+    setError(null);
+    // You could implement a success state here
+    console.log('Success:', message);
+  };
+
+  const extractBrowserInfo = (userAgent) => {
+    if (!userAgent) return 'Unknown Browser';
+    
+    if (userAgent.includes('Chrome')) return 'Chrome';
+    if (userAgent.includes('Firefox')) return 'Firefox';
+    if (userAgent.includes('Safari')) return 'Safari';
+    if (userAgent.includes('Edge')) return 'Edge';
+    
+    return 'Unknown Browser';
+  };
+
+  const formatLastActivity = (timestamp) => {
+    if (!timestamp) return 'Never';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
   };
 
   // Loading state
@@ -169,7 +292,7 @@ const Popup = () => {
   }
 
   // Error state
-  if (error) {
+  if (error && !authStatus.authenticated) {
     return (
       <div className="popup-container">
         <div className="error">{error}</div>
@@ -197,73 +320,221 @@ const Popup = () => {
           <p className="site-domain">{currentSite?.domain}</p>
         </div>
         <div className="auth-indicator">
-          <span className="auth-badge">✓</span>
+          <div className="session-status">
+            <span className="auth-badge">✓</span>
+            <span className="session-indicator" title="Session Active">
+              {sessionInfo ? '🔗' : '⚠️'}
+            </span>
+          </div>
         </div>
       </header>
 
+      {/* Tab Navigation */}
+      <div className="tab-navigation">
+        <button 
+          className={`tab-btn ${activeTab === 'site' ? 'active' : ''}`}
+          onClick={() => setActiveTab('site')}
+        >
+          📋 Site Info
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('sessions');
+            if (allSessions.length === 0 && !sessionLoading) {
+              loadAllSessions();
+            }
+          }}
+        >
+          🔐 Sessions
+        </button>
+      </div>
+
       <div className="popup-content">
-        <div className="policy-section">
-          <h2>Policy Documents</h2>
-          
-          <div className="policy-item">
-            <span className="policy-label">Terms of Service:</span>
-            {currentSite?.tos_url ? (
-              <button 
-                className="policy-link"
-                onClick={() => openLink(currentSite.tos_url)}
-              >
-                View TOS
-              </button>
-            ) : (
-              <span className="policy-missing">Not detected</span>
-            )}
-          </div>
-
-          <div className="policy-item">
-            <span className="policy-label">Privacy Policy:</span>
-            {currentSite?.privacy_policy_url ? (
-              <button 
-                className="policy-link"
-                onClick={() => openLink(currentSite.privacy_policy_url)}
-              >
-                View Privacy Policy
-              </button>
-            ) : (
-              <span className="policy-missing">Not detected</span>
-            )}
-          </div>
-
-          {(currentSite?.tos_url || currentSite?.privacy_policy_url) && (
-            <div className="tracking-status">
-              <span className="status-indicator status-active"></span>
-              <small>Tracking enabled for this site</small>
-            </div>
-          )}
-        </div>
-
-        <div className="actions-section">
-          <button className="refresh-btn" onClick={refreshData}>
-            Refresh Data
-          </button>
-          <button 
-            className="options-btn"
-            onClick={() => chrome.runtime.openOptionsPage()}
-          >
-            Settings
-          </button>
-        </div>
-
-        {currentSite?.last_crawled_at && (
-          <div className="metadata">
-            <small>
-              Last updated: {new Date(currentSite.last_crawled_at).toLocaleDateString()}
-            </small>
+        {error && (
+          <div className="error-banner">
+            {error}
+            <button onClick={() => setError(null)}>×</button>
           </div>
         )}
 
+        {/* Site Information Tab */}
+        {activeTab === 'site' && (
+          <div className="site-tab">
+            <div className="policy-section">
+              <h2>Policy Documents</h2>
+              
+              <div className="policy-item">
+                <span className="policy-label">Terms of Service:</span>
+                {currentSite?.tos_url ? (
+                  <button 
+                    className="policy-link"
+                    onClick={() => openLink(currentSite.tos_url)}
+                  >
+                    View TOS
+                  </button>
+                ) : (
+                  <span className="policy-missing">Not detected</span>
+                )}
+              </div>
+
+              <div className="policy-item">
+                <span className="policy-label">Privacy Policy:</span>
+                {currentSite?.privacy_policy_url ? (
+                  <button 
+                    className="policy-link"
+                    onClick={() => openLink(currentSite.privacy_policy_url)}
+                  >
+                    View Privacy Policy
+                  </button>
+                ) : (
+                  <span className="policy-missing">Not detected</span>
+                )}
+              </div>
+
+              {(currentSite?.tos_url || currentSite?.privacy_policy_url) && (
+                <div className="tracking-status">
+                  <span className="status-indicator status-active"></span>
+                  <small>Tracking enabled for this site</small>
+                </div>
+              )}
+            </div>
+
+            <div className="actions-section">
+              <button className="refresh-btn" onClick={refreshData}>
+                Refresh Data
+              </button>
+              <button 
+                className="options-btn"
+                onClick={() => chrome.runtime.openOptionsPage()}
+              >
+                Settings
+              </button>
+            </div>
+
+            {currentSite?.last_crawled_at && (
+              <div className="metadata">
+                <small>
+                  Last updated: {new Date(currentSite.last_crawled_at).toLocaleDateString()}
+                </small>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Session Management Tab */}
+        {activeTab === 'sessions' && (
+          <div className="sessions-tab">
+            {/* Current Session Info */}
+            {sessionInfo && (
+              <div className="current-session">
+                <h3>Current Session</h3>
+                <div className="session-details">
+                  <div className="session-field">
+                    <span className="field-label">Session ID:</span>
+                    <span className="field-value">
+                      {sessionInfo.session_token?.substring(0, 20)}...
+                    </span>
+                  </div>
+                  <div className="session-field">
+                    <span className="field-label">Last Activity:</span>
+                    <span className="field-value">
+                      {formatLastActivity(sessionInfo.last_activity_update)}
+                    </span>
+                  </div>
+                  <div className="session-field">
+                    <span className="field-label">Extension Version:</span>
+                    <span className="field-value">
+                      {sessionInfo.extension_version || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Session Actions */}
+            <div className="session-actions">
+              <button 
+                className="session-btn refresh-session"
+                onClick={refreshSession}
+                disabled={sessionLoading}
+              >
+                {sessionLoading ? 'Refreshing...' : 'Refresh Session'}
+              </button>
+              
+              <button 
+                className="session-btn load-sessions"
+                onClick={loadAllSessions}
+                disabled={sessionLoading}
+              >
+                {sessionLoading ? 'Loading...' : 'Load All Sessions'}
+              </button>
+              
+              {allSessions.length > 1 && (
+                <button 
+                  className="session-btn deactivate-others"
+                  onClick={deactivateOtherSessions}
+                  disabled={sessionLoading}
+                >
+                  Deactivate Other Sessions
+                </button>
+              )}
+            </div>
+
+            {/* All Sessions List */}
+            {allSessions.length > 0 && (
+              <div className="all-sessions">
+                <h3>All Active Sessions ({allSessions.length})</h3>
+                <div className="sessions-list">
+                  {allSessions.map((session, index) => {
+                    const isCurrent = session.session_token === sessionInfo?.session_token;
+                    const browserInfo = extractBrowserInfo(session.user_agent);
+                    
+                    return (
+                      <div 
+                        key={session.id || index} 
+                        className={`session-item ${isCurrent ? 'current-session' : ''}`}
+                      >
+                        <div className="session-item-header">
+                          <span className="browser-info">{browserInfo}</span>
+                          {isCurrent && <span className="current-badge">CURRENT</span>}
+                        </div>
+                        <div className="session-item-details">
+                          <div className="session-detail">
+                            <span>IP: {session.ip_address || 'Unknown'}</span>
+                          </div>
+                          <div className="session-detail">
+                            <span>Last Activity: {formatLastActivity(session.last_activity)}</span>
+                          </div>
+                          <div className="session-detail">
+                            <span>Version: {session.extension_version || 'Unknown'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Logout Section */}
+            <div className="logout-section">
+              <button className="logout-btn" onClick={handleLogout}>
+                Logout & End Session
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* User Info Footer */}
         <div className="user-info">
           <small>
             Logged in as: {authStatus?.user?.email || 'User'}
+            {sessionInfo && (
+              <span className="session-info">
+                {' • Session: ' + formatLastActivity(sessionInfo.last_activity_update)}
+              </span>
+            )}
           </small>
         </div>
       </div>

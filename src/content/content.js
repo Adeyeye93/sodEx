@@ -190,7 +190,7 @@ class WebsiteDataExtractor {
       document.querySelectorAll(selector).forEach(link => {
         if (this.isValidPolicyLink(link, [/terms\s+of\s+(service|use)/i, /terms\s+&\s+conditions/i, /user\s+agreement/i, /^terms$/i, /^tos$/i])) {
           link.classList.add('tos-privacy-detected');
-          link.title = 'Terms of Service detected by TOS Manager';
+          link.title = 'Terms of Service detected by SOD';
         }
       });
     });
@@ -201,7 +201,7 @@ class WebsiteDataExtractor {
       document.querySelectorAll(selector).forEach(link => {
         if (this.isValidPolicyLink(link, [/privacy\s+policy/i, /privacy\s+notice/i, /data\s+policy/i, /^privacy$/i])) {
           link.classList.add('tos-privacy-detected');
-          link.title = 'Privacy Policy detected by TOS Manager';
+          link.title = 'Privacy Policy detected by SOD';
         }
       });
     });
@@ -216,3 +216,18 @@ if (document.readyState === 'loading') {
 } else {
   new WebsiteDataExtractor();
 }
+
+window.addEventListener('message', async (event) => {
+  if (event.source !== window || event.data.type !== 'PHOENIX_AUTH_DATA') {
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({
+      action: 'setAuthData',
+      authData: event.data.data
+    });
+  } catch (error) {
+    console.error('Failed to send auth data to extension:', error);
+  }
+});

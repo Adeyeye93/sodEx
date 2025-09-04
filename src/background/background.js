@@ -1,28 +1,31 @@
 // src/background/background.js
 
-// API Service class (inline since imports don't work in service workers)
+// API Service class with enhanced session management
 class APIService {
   constructor(baseURL, authURL) {
-    this.baseURL = baseURL || "http://localhost:4000/api/extension"; // Replace with your API URL
-    this.authURL = authURL || "http://localhost:4000"; // Authentication server URL
+    this.baseURL = baseURL || "http://localhost:4000/api/extension";
+    this.authURL = authURL || "http://localhost:4000";
+    this.sessionValidationInterval = null;
+    this.VALIDATION_INTERVAL = 5 * 60 * 1000; // 5 minutes
   }
 
-  // Authentication methods
+  // Enhanced authentication methods
   async checkAuthentication() {
     const authData = await this.getAuthData();
 
-    if (!authData.auth_token) {
-      return { authenticated: false, reason: "no_token" };
-    }
+    // if (!authData.auth_token) {
+    //   return { authenticated: false, reason: "no_token" };
+    // }
 
-    // Check if token is expired
-    if (authData.expires_at && new Date(authData.expires_at) < new Date()) {
-      await this.clearAuthData();
-      return { authenticated: false, reason: "token_expired" };
-    }
+    // // Check if token is expired
+    // if (authData.expires_at && new Date(authData.expires_at) < new Date()) {
+    //   await this.clearAuthData();
+    //   await this.clearSessionData();
+    //   return { authenticated: false, reason: "token_expired" };
+    // }
 
     try {
-      const response = await fetch(`${this.authURL}/api/is_authenticated`, {
+      const response = await fetch(`${this.baseURL}/is_authenticated`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${authData.auth_token}`,
@@ -32,16 +35,43 @@ class APIService {
 
       if (response.ok) {
         const result = await response.json();
+        console.log("Auth check result:", result);
         if (result.authenticated) {
           // Update last check timestamp
           await this.updateAuthData({ last_check: new Date().toISOString() });
-          return { authenticated: true, user: result.user };
+          
+          const Data = await this.getAuthData()
+
+          if (Data.auth_token === "") {
+            const start = await fetch(`${this.baseURL}/auth_data`, {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${Data.auth_token}`,
+                "Content-Type": "application/json",
+              },
+            });
+            if (start.ok) {
+              const res = await start.json();
+              console.log(res);
+              this.updateAuthData(res.data);
+              await this.validateOrCreateBrowserSession();
+              return { authenticated: true, user: result.user };
+            }else{
+              console.error(res);
+              return { authenticated: false, reason: "server_error" };
+            }
+          }
+
+          // Validate/create browser session on backend
+          
         } else {
           await this.clearAuthData();
+          await this.clearSessionData();
           return { authenticated: false, reason: "invalid_token" };
         }
       } else {
         await this.clearAuthData();
+        await this.clearSessionData();
         return { authenticated: false, reason: "server_error" };
       }
     } catch (error) {
@@ -50,6 +80,144 @@ class APIService {
     }
   }
 
+  // Browser session management methods
+  async validateOrCreateBrowserSession() {
+    try {
+      const sessionData = await this.getBrowserSessionData();
+      
+      const response = await this.makeAuthenticatedRequest("/sessions/validate", {
+        method: "POST",
+        body: JSON.stringify(sessionData),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Browser session validated/created:", result.data.id);
+        
+        // Update local session data
+        await this.updateBrowserSessionData({
+          server_session_id: result.data.id,
+          last_validated: new Date().toISOString(),
+        });
+        
+        return result.data;
+      } else {
+        console.error("Failed to validate browser session:", response.status);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error validating browser session:", error);
+      return null;
+    }
+  }
+
+  async getBrowserSessionData() {
+    const sessionToken = await this.getSessionToken();
+    const sessionData = await this.getStoredSessionData();
+
+    return {
+      session_token: sessionToken,
+      browser_fingerprint: this.generateBrowserFingerprint(),
+      user_agent: navigator.userAgent,
+      ip_address: await getPublicIP(),
+      extension_version: chrome.runtime.getManifest().version,
+      ...sessionData,
+    };
+  }
+
+  async getStoredSessionData() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(["browserSessionData"], (result) => {
+        resolve(result.browserSessionData || {});
+      });
+    });
+  }
+
+  async updateBrowserSessionData(updates) {
+    const currentData = await this.getStoredSessionData();
+    const updatedData = { ...currentData, ...updates };
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ browserSessionData: updatedData }, resolve);
+    });
+  }
+
+  async clearSessionData() {
+    return new Promise((resolve) => {
+      chrome.storage.local.remove(["sessionToken", "browserSessionData"], resolve);
+    });
+  }
+
+  // Enhanced activity tracking
+  async updateLastActivity() {
+    const sessionToken = await this.getSessionToken();
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `/sessions/${sessionToken}/activity`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            last_activity: new Date().toISOString(),
+          }),
+        }
+      );
+
+      if (response.ok) {
+        console.log("Activity updated successfully");
+        await this.updateBrowserSessionData({
+          last_activity_update: new Date().toISOString(),
+        });
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Error updating last activity:", error);
+      throw error;
+    }
+  }
+
+  // Session validation scheduler
+  startSessionValidation() {
+    if (this.sessionValidationInterval) {
+      clearInterval(this.sessionValidationInterval);
+    }
+
+    this.sessionValidationInterval = setInterval(async () => {
+      const authStatus = await this.checkAuthentication();
+      if (!authStatus.authenticated) {
+        console.log("Session validation failed, stopping scheduler");
+        this.stopSessionValidation();
+      }
+    }, this.VALIDATION_INTERVAL);
+  }
+
+  stopSessionValidation() {
+    if (this.sessionValidationInterval) {
+      clearInterval(this.sessionValidationInterval);
+      this.sessionValidationInterval = null;
+    }
+  }
+
+  // Session logout/cleanup
+  async logout() {
+    const sessionToken = await this.getSessionToken();
+    
+    try {
+      // Deactivate session on server
+      await this.makeAuthenticatedRequest(`/sessions/${sessionToken}`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      console.error("Error deactivating session:", error);
+    }
+
+    // Clear local data
+    await this.clearAuthData();
+    await this.clearSessionData();
+    this.stopSessionValidation();
+  }
+
+  // Enhanced auth data methods
   async getAuthData() {
     return new Promise((resolve) => {
       chrome.storage.local.get(["authData"], (result) => {
@@ -67,8 +235,14 @@ class APIService {
   }
 
   async setAuthData(authData) {
+    // When setting new auth data, also initialize session validation
     return new Promise((resolve) => {
-      chrome.storage.local.set({ authData }, resolve);
+      chrome.storage.local.set({ authData }, () => {
+        if (authData.auth_token) {
+          this.startSessionValidation();
+        }
+        resolve();
+      });
     });
   }
 
@@ -80,6 +254,7 @@ class APIService {
   }
 
   async clearAuthData() {
+    this.stopSessionValidation();
     return new Promise((resolve) => {
       chrome.storage.local.remove(["authData"], resolve);
     });
@@ -96,6 +271,11 @@ class APIService {
       language: navigator.language,
       platform: navigator.platform,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen: {
+        width: screen.width,
+        height: screen.height,
+        colorDepth: screen.colorDepth
+      }
     };
 
     return btoa(JSON.stringify(fingerprint));
@@ -118,7 +298,7 @@ class APIService {
 
   generateSessionToken() {
     return (
-      "session_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9)
+      "ext_session_" + Date.now() + "_" + Math.random().toString(36).substr(2, 12)
     );
   }
 
@@ -144,12 +324,14 @@ class APIService {
     if (response.status === 401) {
       // Token expired or invalid
       await this.clearAuthData();
+      await this.clearSessionData();
       throw new Error("Authentication expired");
     }
 
     return response;
   }
 
+  // Your existing API methods...
   async sendWebsiteData(websiteData) {
     try {
       const response = await this.makeAuthenticatedRequest("/websites", {
@@ -159,38 +341,6 @@ class APIService {
       return await response.json();
     } catch (error) {
       console.error("Error sending website data:", error);
-      throw error;
-    }
-  }
-
-  async sendSessionData(sessionData) {
-    try {
-      const response = await this.makeAuthenticatedRequest("/sessions", {
-        method: "POST",
-        body: JSON.stringify(sessionData),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error("Error sending session data:", error);
-      throw error;
-    }
-  }
-
-  async updateLastActivity() {
-    const sessionToken = await this.getSessionToken();
-    try {
-      const response = await this.makeAuthenticatedRequest(
-        `/sessions/${sessionToken}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            last_activity: new Date().toISOString(),
-          }),
-        }
-      );
-      return await response.json();
-    } catch (error) {
-      console.error("Error updating last activity:", error);
       throw error;
     }
   }
@@ -206,6 +356,32 @@ class APIService {
       throw error;
     }
   }
+
+  // Get user's browser sessions
+  async getUserSessions() {
+    try {
+      const response = await this.makeAuthenticatedRequest("/sessions");
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching user sessions:", error);
+      throw error;
+    }
+  }
+
+  // Deactivate other sessions
+  async deactivateOtherSessions() {
+    const sessionToken = await this.getSessionToken();
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `/sessions/${sessionToken}/deactivate_others`,
+        { method: "POST" }
+      );
+      return await response.json();
+    } catch (error) {
+      console.error("Error deactivating other sessions:", error);
+      throw error;
+    }
+  }
 }
 
 const apiService = new APIService();
@@ -218,34 +394,21 @@ chrome.runtime.onInstalled.addListener(async () => {
   const authStatus = await apiService.checkAuthentication();
 
   if (authStatus.authenticated) {
-    console.log("User is authenticated, initializing session data");
-    await initializeSessionData();
+    console.log("User is authenticated, initializing session management");
+    apiService.startSessionValidation();
   } else {
     console.log("User not authenticated, reason:", authStatus.reason);
-    // Don't initialize session data for unauthenticated users
   }
 });
 
-async function initializeSessionData() {
-  // Initialize session data
-  const sessionData = {
-    session_token: await apiService.getSessionToken(),
-    browser_fingerprint: apiService.generateBrowserFingerprint(),
-    user_agent: navigator.userAgent,
-    ip_address: await getPublicIP(),
-    extension_version: chrome.runtime.getManifest().version,
-    is_active: true,
-    last_activity: new Date().toISOString(),
-  };
-
-  // Send initial session data to API
-  try {
-    await apiService.sendSessionData(sessionData);
-    console.log("Session data initialized");
-  } catch (error) {
-    console.error("Failed to initialize session:", error);
+// Handle startup
+chrome.runtime.onStartup.addListener(async () => {
+  const authStatus = await apiService.checkAuthentication();
+  
+  if (authStatus.authenticated) {
+    apiService.startSessionValidation();
   }
-}
+});
 
 // Handle tab updates with authentication check
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -329,7 +492,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case "clearAuth":
       apiService
-        .clearAuthData()
+        .logout()
         .then(() => sendResponse({ success: true }))
         .catch((error) =>
           sendResponse({ success: false, error: error.message })
@@ -370,11 +533,71 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         );
       return true;
 
+    case "getUserSessions":
+      apiService
+        .checkAuthentication()
+        .then((authStatus) => {
+          if (!authStatus.authenticated) {
+            sendResponse({ success: false, error: "Not authenticated" });
+            return;
+          }
+
+          return apiService.getUserSessions();
+        })
+        .then((sessions) => sendResponse({ success: true, data: sessions }))
+        .catch((error) =>
+          sendResponse({ success: false, error: error.message })
+        );
+      return true;
+
+    case "deactivateOtherSessions":
+      apiService
+        .checkAuthentication()
+        .then((authStatus) => {
+          if (!authStatus.authenticated) {
+            sendResponse({ success: false, error: "Not authenticated" });
+            return;
+          }
+
+          return apiService.deactivateOtherSessions();
+        })
+        .then((result) => sendResponse({ success: true, data: result }))
+        .catch((error) =>
+          sendResponse({ success: false, error: error.message })
+        );
+      return true;
+
+    case "validateBrowserSession":
+      apiService
+        .checkAuthentication()
+        .then((authStatus) => {
+          if (!authStatus.authenticated) {
+            sendResponse({ success: false, error: "Not authenticated" });
+            return;
+          }
+
+          return apiService.validateOrCreateBrowserSession();
+        })
+        .then((session) => sendResponse({ success: true, data: session }))
+        .catch((error) =>
+          sendResponse({ success: false, error: error.message })
+        );
+      return true;
+
     case "detectPolicy":
       // Handle policy detection notification for unauthenticated users
       handlePolicyDetection(request.domain, request.hasPolicy, sender.tab.id);
       sendResponse({ success: true });
       return false;
+
+    case "getBrowserSessionInfo":
+      apiService
+        .getBrowserSessionData()
+        .then((sessionData) => sendResponse({ success: true, data: sessionData }))
+        .catch((error) =>
+          sendResponse({ success: false, error: error.message })
+        );
+      return true;
 
     default:
       sendResponse({ success: false, error: "Unknown action" });
@@ -404,6 +627,15 @@ async function handlePolicyDetection(domain, hasPolicy, tabId) {
     chrome.action.setBadgeText({ text: "", tabId });
   }
 }
+
+// Periodic cleanup of expired session validation
+setInterval(() => {
+  apiService.checkAuthentication().then((authStatus) => {
+    if (!authStatus.authenticated) {
+      apiService.stopSessionValidation();
+    }
+  });
+}, 30 * 60 * 1000); // Check every 30 minutes
 
 // Utility function to get public IP
 async function getPublicIP() {
