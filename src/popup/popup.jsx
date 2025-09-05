@@ -68,29 +68,102 @@ const Popup = () => {
       const url = new URL(tab.url);
       const domain = url.hostname;
 
-      // Get website data from API
+      // First check if site data is available and fresh
       chrome.runtime.sendMessage(
-        { action: 'getWebsiteInfo', domain },
-        (response) => {
-          if (response.success) {
-            setCurrentSite(response.data);
+        { action: 'siteAvailable', domain },
+        async (availabilityResponse) => {
+          if (availabilityResponse.success && availabilityResponse.data) {
+            const siteData = availabilityResponse.data;
+            const isDataFresh = isLastCrawledFresh(siteData.last_crawled_at);
+            
+            if (isDataFresh) {
+              // Data is fresh, use it directly
+              console.log('Using fresh cached site data');
+              setCurrentSite(siteData);
+              return;
+            } else {
+              // Data exists but is stale, update it
+              console.log('Site data is stale, refreshing...');
+              await refreshSiteData(domain, url);
+              return;
+            }
           } else {
-            // If no data exists, create placeholder
-            setCurrentSite({
-              domain,
-              name: domain,
-              favicon_url: `${url.protocol}//${domain}/favicon.ico`,
-              tos_url: '',
-              privacy_policy_url: '',
-              is_active: true,
-              last_crawled_at: null
-            });
+            // No data exists, fetch fresh data
+            console.log('No site data found, fetching...');
+            await refreshSiteData(domain, url);
           }
         }
       );
     } catch (err) {
       setError('Failed to load site data');
     }
+  };
+
+  const refreshSiteData = async (domain, url) => {
+    try {
+      // First get current tab to collect website data from content script
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      // Get website data from content script
+      chrome.tabs.sendMessage(tab.id, { action: 'getWebsiteData' }, (contentResponse) => {
+        const websiteData = contentResponse?.websiteData || {
+          domain,
+          name: domain,
+          favicon_url: `${url.protocol}//${domain}/favicon.ico`,
+          tos_url: '',
+          privacy_policy_url: '',
+          is_active: true,
+          last_crawled_at: new Date().toISOString()
+        };
+
+        // Call getWebsiteInfo with the collected website data
+        chrome.runtime.sendMessage(
+          { 
+            action: 'getWebsiteInfo', 
+            domain, 
+            websiteData: {
+              ...websiteData,
+              domain,
+              last_crawled_at: new Date().toISOString()
+            }
+          },
+          (response) => {
+            if (response.success) {
+              console.log('Successfully fetched/updated site data');
+              setCurrentSite(response.data.site || response.data);
+            } else {
+              console.error('API call failed:', response.error);
+              // If API call fails, use the collected data as fallback
+              setCurrentSite(websiteData);
+            }
+          }
+        );
+      });
+    } catch (error) {
+      console.error('Error refreshing site data:', error);
+      // Fallback if content script fails
+      const fallbackData = {
+        domain,
+        name: domain,
+        favicon_url: `${url.protocol}//${domain}/favicon.ico`,
+        tos_url: '',
+        privacy_policy_url: '',
+        is_active: true,
+        last_crawled_at: null
+      };
+      setCurrentSite(fallbackData);
+    }
+  };
+
+  const isLastCrawledFresh = (lastCrawledAt) => {
+    if (!lastCrawledAt) return false;
+    
+    const crawledDate = new Date(lastCrawledAt);
+    const now = new Date();
+    const diffHours = (now - crawledDate) / (1000 * 60 * 60);
+    
+    // Consider data fresh if it's less than 24 hours old
+    return diffHours < 24;
   };
 
   const loadSessionInfo = async () => {
@@ -181,10 +254,23 @@ const Popup = () => {
     }
   };
 
-  const refreshData = () => {
+  const refreshData = (forceFresh = false) => {
     setLoading(true);
     setError(null);
-    checkAuthAndLoadData();
+    if (forceFresh) {
+      // Force fresh data fetch by directly calling refreshSiteData
+      const getCurrentTab = async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab.url && !tab.url.startsWith('chrome://')) {
+          const url = new URL(tab.url);
+          await refreshSiteData(url.hostname, url);
+        }
+        setLoading(false);
+      };
+      getCurrentTab();
+    } else {
+      checkAuthAndLoadData();
+    }
   };
 
   const sendMessage = (message) => {
@@ -401,9 +487,14 @@ const Popup = () => {
             </div>
 
             <div className="actions-section">
-              <button className="refresh-btn" onClick={refreshData}>
+              <button className="refresh-btn" onClick={() => refreshData(false)}>
                 Refresh Data
               </button>
+              {currentSite?.last_crawled_at && (
+                <button className="force-refresh-btn" onClick={() => refreshData(true)}>
+                  Force Update
+                </button>
+              )}
               <button 
                 className="options-btn"
                 onClick={() => chrome.runtime.openOptionsPage()}
@@ -416,6 +507,11 @@ const Popup = () => {
               <div className="metadata">
                 <small>
                   Last updated: {new Date(currentSite.last_crawled_at).toLocaleDateString()}
+                  {isLastCrawledFresh(currentSite.last_crawled_at) ? (
+                    <span className="fresh-indicator"> • Fresh</span>
+                  ) : (
+                    <span className="stale-indicator"> • Needs update</span>
+                  )}
                 </small>
               </div>
             )}
